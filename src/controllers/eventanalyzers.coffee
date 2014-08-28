@@ -3,9 +3,8 @@ EventEmitter = require('events').EventEmitter
 
 
 class EmailAnalyzer
-    constructor: ->
-        @parser = require('packet').createParser()
     parseMessage: (message) ->
+        @parser = require('packet').createParser()
         return new promise (fulfill, reject) =>
             parsed = false
             @parser.extract "x448, l32 =>virusListLength, l32 =>emailLength", (header) =>
@@ -60,10 +59,26 @@ class EmailAnalyzer
                 return reject new Error "Timed out"
             setTimeout timeout, 10000
 
+    
+class TransactionAnalyzer
+
+    parseMessage: (message) ->
+        @parser = require('packet').createParser()
+        return new promise (fulfill, reject) =>
+            parsed = false
+            @parser.extract "l8[48] => cname, l32 => counter, l64 => timestamp, l32 => duration", (header) =>
+                parsed = true
+                header.timestamp = new Date 1000 * header.timestamp
+                return fulfill header
+            connect = =>
+                return reject new Error "Timed out" unless parsed
+            setTimeout  connect, 10000
+
 
 class EventAnalyzer extends EventEmitter
     constructor: ->
         @emailanalyzer = new EmailAnalyzer
+        @ta = new TransactionAnalyzer
 
     emailvirus: (message) ->
         @emailanalyzer.parseMessage message
@@ -77,8 +92,38 @@ class EventAnalyzer extends EventEmitter
                       virusNames: data.virus
                       email: parsedemail
                   @emit 'emailvirus.result', result
+                  return
               . catch (error) =>
                         @emit 'emailvirus.error', error
+                        return
+
+
+    transactionHandler: (message, topic) ->
+        @ta.parseMessage message
+         . then (header) =>
+             @emit 'transactions', topic, header
+             return
+         . catch (error) =>
+             @emit 'error', new Error "#{topic} failed for message #{message}"
+             return
+
+    webtransactions: (message) ->
+        return @transactionHandler message, 'web.transactions'
+
+    emailtransactions: (message) ->
+        return @transactionHandler message, 'email.transactions'
+    webvirusviolations: (message) ->
+        return @transactionHandler message, 'web.virus.violations'
+    emailvirusviolations: (message) ->
+        return @transactionHandler message, 'email.virus.violations'
+    webcontentfilteringtransactions: (message) ->
+        return @transactionHandler message, 'web.contentfiltering.transactions'
+    webcontentfilteringviolations: (message) ->
+        return @transactionHandler message, 'web.contentfiltering.violations'
+    totaltransactions: (message) ->
+        return @transactionHandler message, 'total.transactions'
+
+
                             
 
 

@@ -10,7 +10,7 @@ SR = require('stormagent').StormRegistry
 SD = require('stormagent').StormData
 SA = require 'stormagent'
 
-#eventAnalyzers = require './eventanalyzers'
+EA = require './eventanalyzers'
 
 
 
@@ -72,11 +72,13 @@ class AnalyzerManager extends SA
         super config
         @config = config
         @import module
-        @mq = new MM @config.mq
-        @edb = new EM @config.edb
 
     run: (config) ->
         super config
+        @mq = new MM @config.mq
+        em  = promise.promsifyAll(EM.prototype)
+        @edb = new em @config.edb
+        @ea  = new EA
         @log "data dir is ", @config
         @aservices = new AnalyzerServices "#{@config.datadir}/analyzerservices.db"
 
@@ -102,17 +104,47 @@ class AnalyzerManager extends SA
             @mqclient = mqclient
             @log.debug "MQ client instance created to broker #{@config.mq.host} port #{@config.mq.port}"
             @aservices.on 'added', (aservice) =>
-                aservice.subscription = @subscribe aservice.data.topic, @dummyHandler
+                aservice.subscription = @subscribe aservice.data.topic, aservice.data.handler
                 @log.debug "Subscribed to topic #{aservice.data.topic}"
 
             @aservices.on 'updated', (aservice) =>
                 @unsubscribe aservice.subscription
-                aservice.subscription = @subscribe aservice.data.topic, @dummyHandler
+                aservice.subscription = @subscribe aservice.data.topic, aservice.data.handler
                 @log.debug "Subscribed to topic #{aservice.data.topic}"
 
             @aservices.on 'removed', (aservice) =>
                 @unsubscribe aservice.subscription
 
+        @ea.on 'email.virus.result', (emailData) =>
+            #Write onto elastic DB
+            @eclient.createDocumentAsync emailData.cname, 'email.virus', emailData
+             . then (response) ->
+                 @log "Added email virus ", response
+             , (error) ->
+                  @log "Error while adding email virus into elastic DB", error
+
+        @ea.on 'email.virus.error', ( error) =>
+            # just for logging purposes
+            @log error
+
+        @ea.on 'transactions', (topic, transaction) =>
+            #write onto Elastic DB
+            @eclient.createDocumentAsync emailData.cname, topic, transaction
+             . then (response) ->
+                 @log "Added email virus ", response
+             , (error) ->
+                  @log "Error while adding transaction of type #{topic} into elastic DB", error
+
+        @ea.on 'error', (error) ->
+            @log error
+
+     setHandler: (service) ->
+         hlist = service.data.topic.split('.')
+         handler = "@ea."
+         for word in hlist
+             handler +=  word
+         service.data.handler = eval handler
+         return
 
      addEventService: (service) ->
          @log "rcvd service", service
@@ -126,6 +158,7 @@ class AnalyzerManager extends SA
              if old?
                  console.log "Found matching Analyzer service ", old
                  return fulfill 409
+             @setHandler aservice
              @aservices.add  aservice.id, aservice
              console.log "New Analyzer service added", aservice
              return fulfill aservice
@@ -137,7 +170,7 @@ class AnalyzerManager extends SA
                 aservice = new AnalyzerService id, service
             catch err
                 return reject new Error err
-
+            @setHandler aservice
             entry = @aservices.update aservice.id, aservice
             return fulfill entry
 
