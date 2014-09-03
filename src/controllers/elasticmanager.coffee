@@ -25,8 +25,16 @@ class ElasticController
     getDocument: (dbclient, index, type, callback) ->
         content = {index:index}
         content.type = type if type
-        dbclient.search content, (error, response) =>
-            return callback error, response
+        return @search dbclient, content, callback
 
+    search: (dbclient, content, callback) ->
+        dbclient.search content, (error, response) =>
+            unless error instanceof Error
+                if response.hits? and response.hits.total > 1
+                    #results = (hit._source for hit in response.hits,hits)
+                    callback null, response.hits
+            else
+                return callback error
+    
 
 module.exports = ElasticController
