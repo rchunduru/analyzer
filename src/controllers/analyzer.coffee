@@ -11,7 +11,8 @@ SD = require('stormagent').StormData
 SA = require 'stormagent'
 
 EA = require './eventanalyzers'
-helper = require '../helpers/utils'
+parseurl = require('../helpers/utils').parseUrl
+parseMessage = require('../helpers/utils').parseMessage
 
 
 class AnalyzerService extends SD
@@ -28,8 +29,9 @@ class AnalyzerService extends SD
             sources:            {"type": "array",  "required": true}
 
 
-    constructor: (id, data, @config) ->
+    constructor: (id, data) ->
         super id, data, schema
+        @log "Got config in the AS ", @config
         @em  = promise.promisifyAll(EM.prototype)
         @mq = new MM
         @ea = new EA
@@ -37,22 +39,24 @@ class AnalyzerService extends SD
         @topics = []
         @mqConnect()
         @dbConnect()
-        @getTransaction()
+        
 
     mqConnect:  ->
         if @data and @data.sources?
             @data.sources.map (source) =>
-                parsedurl = helper.parseUrl source
+                parsedurl = parseurl source
                 # Build the topics ready for subscription
                 if parsedurl.query? and parsedurl.query.topic?
                     parsedurl.query.topic.map (topic) =>
                         @topics.push topic
 
                 connect = =>
-                    @mq.connect parsedurl.host, parsedurl.port, parsedurl.username, parsedurl.password, 10000, 5
+                    @mq.connect parsedurl.hostname, parsedurl.port, parsedurl.username, parsedurl.password, 10000, 5
                 @mq.on 'mq.connected', (client) =>
+                    @log "Connected to the MQ broker", data.sources
                     @mqclient = client
                     @subscribe()
+
 
                 @mq.on 'mq.error', (error) =>
                     @mqclient = ""
@@ -63,8 +67,10 @@ class AnalyzerService extends SD
 
     dbConnect:  ->
         if @data and @data.output?
-            parsedurl = helper.parseurl entry.output
-            @eclient = @em.init "#{parsedurl.host}:#{parsedurl.port}", @config.loglevel
+            parsedurl = parseurl @data.output
+            @log "Elastic DB server details: ", parsedurl
+            @eclient = @em.init host:parsedurl.host, loglevel:'error'
+            @log "Connected to the Elasticsearch DB", @data.output
 
     subscribe: ->
             @topics.map (topic) =>
@@ -89,7 +95,7 @@ class AnalyzerService extends SD
 
 
     mailvirusresult: (message) ->
-        helper.parseMessage message
+        parseMessage message
             . then (emailData) =>
                 @log "Email Data recvd is", emailData
                 #Write onto elastic DB
@@ -100,7 +106,7 @@ class AnalyzerService extends SD
                     @log "Error while adding email virus into elastic DB", error
 
     webcontentfilteringtransactions: (message) ->
-        helper.parseMessage message
+        parseMessage message
             . then (transaction) =>
                 @getTransaction()
                     . then (content) =>
@@ -118,7 +124,7 @@ class AnalyzerService extends SD
                 @createTransaction content
 
     webcontentfilteringviolations: (message) ->
-       helper.parseMessage message
+       parseMessage message
         . then (transaction) =>
             @getTransaction()
              . then (content) =>
@@ -136,7 +142,7 @@ class AnalyzerService extends SD
                 @createTransaction content
 
     emailvirusviolations: (message) ->
-       helper.parseMessage message
+       parseMessage message
         . then (transaction) =>
             @getTransaction()
              . then (content) =>
@@ -154,7 +160,7 @@ class AnalyzerService extends SD
                 @createTransaction content
 
     emailvirustransactions: (message) ->
-       helper.parseMessage message
+       parseMessage message
         . then (transaction) =>
             @getTransaction()
              . then (content) =>
@@ -172,7 +178,7 @@ class AnalyzerService extends SD
                 @createTransaction content
 
     webvirusviolations: (message) ->
-       helper.parseMessage message
+       parseMessage message
         . then (transaction) =>
             @getTransaction()
              . then (content) =>
@@ -190,7 +196,7 @@ class AnalyzerService extends SD
                 @createTransaction content
 
     webvirustransactions: (message) ->
-       helper.parseMessage message
+       parseMessage message
         . then (transaction) =>
             @getTransaction()
              . then (content) =>
@@ -208,7 +214,7 @@ class AnalyzerService extends SD
                 @createTransaction content
 
     transactions: (message) ->
-       helper.parseMessage message
+       parseMessage message
         . then (transaction) =>
             @getTransaction()
              . then (content) =>
@@ -299,21 +305,15 @@ class AnalyzerServices extends SR
 
     get: (key) ->
         entry = super key
-        return unless entry?
-        if entry.data? and entry.data instanceof AnalyzerService
-            entry.data.id = entry.id
-            entry.data
-        else
-            entry
+        return unless entry? and entry.data?
+        entry.data.id = entry.id
+        entry.data
 
+    add: (key, entry) ->
+        return unless entry? and entry.data?
+        entry.data.id = entry.id
+        super key, entry
 
-
-
-
-
-
-
-#class AnalyzerManager extends mixof SA, EM, MM
 class AnalyzerManager extends SA
 
     constructor: (config) ->
@@ -332,8 +332,10 @@ class AnalyzerManager extends SA
              try
                 aservice = new AnalyzerService null, service
              catch err
+                 @log "error is ", err
                  return reject new Error err
-             return fulfill aservice
+             @aservices.add aservice.id, aservice
+             return fulfill aservice.data
 
     updateEventService: (id, service) ->
         console.log "rcvd contents", "id: #{id}", "entry: ", service

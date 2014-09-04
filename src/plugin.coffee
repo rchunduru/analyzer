@@ -8,7 +8,7 @@
          .then  (service) =>
             @send service
           , (error) =>
-              @next error
+              @next "#{error}"
 
     @get '/analyzers/:id': ->
         match = agent.aservices.get @params.id
