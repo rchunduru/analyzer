@@ -33,7 +33,7 @@
 
     @get '/analyzers/:id/stats': ->
         agent.getStats @params.id, @query
-         .then(response) =>
+         .then (response) =>
              @send response
           , (error) =>
               @next error

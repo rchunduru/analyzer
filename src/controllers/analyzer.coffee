@@ -31,8 +31,8 @@ class AnalyzerService extends SD
 
     constructor: (id, data) ->
         super id, data, schema
-        @log "Got config in the AS ", @config
         @em  = promise.promisifyAll(EM.prototype)
+        @log "Debug: Elastic manager object is ", @em
         @mq = new MM
         @ea = new EA
         @susbscriptions = {}
@@ -267,6 +267,8 @@ class AnalyzerService extends SD
                 interval = '1d'
             when 'year'
                 interval = '1y'
+        from  ?= '2014-01-01'
+        to    ?= new Date()
 
         return new promise (fulfill, reject) =>
             body =
@@ -285,11 +287,11 @@ class AnalyzerService extends SD
                             mailVirusTransactions:sum:field:"transactions.mailVirus.transactions"
                             mailVirusViolations:sum:field:"transactions.mailVirus.violations"
 
-            @eclient.search @id, 'transaction.summary', body
-             . then (results) =>
+            @em.searchAsync @eclient, @id, 'transaction.summary', body
+            . then (results) =>
                  # XXX Format the results
                  return fulfill results
-             , (error) =>
+            , (error) =>
                  return reject error
 
 class AnalyzerServices extends SR
@@ -308,6 +310,10 @@ class AnalyzerServices extends SR
         return unless entry? and entry.data?
         entry.data.id = entry.id
         entry.data
+
+    getEntry: (key) ->
+        return unless key
+        @entries[key]
 
     add: (key, entry) ->
         return unless entry? and entry.data?
@@ -348,8 +354,8 @@ class AnalyzerManager extends SA
             return fulfill entry
 
      getStats: (id, params) ->
-         entry = @aservices.get id
-         return entry.data.getStats params.from, params.to, params.interval
+         entry = @aservices.getEntry id
+         return entry.getStats params.from, params.to, params.interval
 
      dummyHandler: (message) ->
         console.log "recvd message form ActiveMQ", message
