@@ -27,7 +27,7 @@ class ElasticController
         content.type = type if type
         return @search dbclient, content, callback
 
-    search: (dbclient, index,  content, callback) ->
+    search: (dbclient, index, type,  content, callback) ->
         dbclient.search index:index, body:content, (error, response) =>
             unless error instanceof Error
                 if response.hits? and response.hits.total > 1
