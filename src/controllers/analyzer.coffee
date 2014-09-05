@@ -13,6 +13,7 @@ SA = require 'stormagent'
 EA = require './eventanalyzers'
 parseurl = require('../helpers/utils').parseUrl
 parseMessage = require('../helpers/utils').parseMessage
+postRequest = require('../helpers/utils').postRequest
 
 
 class AnalyzerService extends SD
@@ -80,9 +81,9 @@ class AnalyzerService extends SD
                         @subscriptions[topic] = @subscribe "/topic/#{topic}", @loggersyslog
 
     loggersyslog: (message) ->
-        @log "Message from MQ ..check if its in string format or raw buffer.. Assuming buffer format"
-        @log message
-        msg  = @ea.stripHeader message.body
+        @log "Assuming string format rcvd from MQ", message
+        buf = new Buffer message.body.length
+        msg  = @ea.stripHeader buf
         syslog = @ea.decodeBinarySyslog msg
         switch syslog.format
             when 'email.virus', 'EMAIL.VIRUS'
@@ -147,6 +148,7 @@ class AnalyzerService extends SD
         @eclient.createDocumentAsync @id, 'email.virus', emailData
             . then (response) ->
                 @log "Added email virus ", response
+                @emit 'email.virus', emailData
             , (error) ->
                 @log "Error while adding email virus into elastic DB", error
 
@@ -221,9 +223,13 @@ class AnalyzerServices extends SR
             if entry?
                 entry.saved = true
                 @add key, entry
+                entry.on 'email.virus', (emailData) =>
+                    @emit 'email.virus', emailData
+
 
         @on 'removed', (key) ->
         super filename
+
 
     get: (key) ->
         entry = super key
@@ -251,6 +257,8 @@ class AnalyzerManager extends SA
         super config
         @log "data dir is ", @config
         @aservices = new AnalyzerServices "#{@config.datadir}/analyzerservices.db"
+        @aservices.on 'email.virus', (emailData) =>
+            @notifyUSG emailData
 
      addEventService: (service) ->
          @log "rcvd service", service
@@ -277,9 +285,9 @@ class AnalyzerManager extends SA
          entry = @aservices.getEntry id
          return entry.getStats params.from, params.to, params.interval
 
-     dummyHandler: (message) ->
-        console.log "recvd message form ActiveMQ", message
-        message.ack() if message
+     notifyUSG: (emailData) ->
+         postRequest emailData, @config.usgEmailNotify
+
 
 module.exports = AnalyzerManager
 

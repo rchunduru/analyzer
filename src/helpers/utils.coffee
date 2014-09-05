@@ -14,3 +14,11 @@ module.exports.parseMessage = parseMessage =  (message) ->
             return fulfill JSON.parse data
         parser.parse message
 
+module.exports.postRequest = postRequest = (body, url) ->
+    parsedurl = parseUrl url
+    options = {host:parsedurl.hostname, port:parsedurl.port, path:parsedurl.pathname, method:POST, headers:{'content-Type':"application/json"}}
+    http = require 'http'
+    req = http.request options, (res) ->
+        console.log 'rcvd response for http request', res
+    req.write body
+    req.end()

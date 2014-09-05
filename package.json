@@ -28,7 +28,8 @@
       "plugins": [
         "lib/plugin"
       ]
-    }
+    },
+    "usgEmailNotify": "http://enterprise.dev.intercloud.net/notify"
   },
   "repository": {
     "type": "git",
