@@ -3,35 +3,6 @@ EventEmitter = require('events').EventEmitter
 
 
 class EmailAnalyzer
-    parseMessage: (message) ->
-        @parser = require('packet').createParser()
-        return new promise (fulfill, reject) =>
-            parsed = false
-            @parser.extract "x448, l32 =>virusListLength, l32 =>emailLength", (header) =>
-                parsed = true
-                console.log "headers parsed", header
-                return fulfill header.virusListLength, header.emailLength
-            timeout = (parsed)  =>
-                return reject new Error "Timed out" unless parsed
-
-            @parser.parse message
-
-            setTimeout timeout, 10000
-            
-    parsevirus: (message, virusLength, emailLength) ->
-            cname = message.toString 'utf-8', 0, 48
-            viruslist  = message.toString 'utf-8', 64, (64 + virusLength)
-            #email = message.toString 'utf-8', (64+virusLength), (64 + virusLength + emailLength)
-            timestamp = message.readDoubleLE 48, 56
-            email = message.toString 'utf-8', 64 + virusLength
-            #console.log "cname is ", cname, "virus list is ", viruslist, "email is ", email
-            data =
-                cname:cname
-                virusList: viruslist
-                email: email
-                timestamp:  new Date 1000 * timestamp
-            return data
-                
 
     parsemail: (unparsedEmail) ->
         return new promise (fulfill, reject) =>
@@ -60,71 +31,47 @@ class EmailAnalyzer
             setTimeout timeout, 10000
 
     
-class TransactionAnalyzer
-
-    parseMessage: (message) ->
-        @parser = require('packet').createParser()
-        return new promise (fulfill, reject) =>
-            parsed = false
-            @parser.extract "l8[48] => cname, l32 => counter, l64 => timestamp, l32 => duration", (header) =>
-                parsed = true
-                header.timestamp = new Date 1000 * header.timestamp
-                return fulfill header
-            connect = =>
-                return reject new Error "Timed out" unless parsed
-            setTimeout  connect, 10000
-
-
 class EventAnalyzer extends EventEmitter
     constructor: ->
         @emailanalyzer = new EmailAnalyzer
-        @ta = new TransactionAnalyzer
 
-    emailvirus: (message) ->
-        @emailanalyzer.parseMessage message
-         . then (viruslength, emaillength) =>
-             data = @emailanalyzer.parsevirus message, viruslength, emaillength
-             @emailanalyzer.parsemail data.email
+    stripHeader: (message) ->
+        size = message.readUInt32LE 0
+        data = message.slice 4, size
+        data
+
+    decodeBinarySyslog: (data) ->
+        syslog = {}
+        syslog.pri = data.readUInt8 0
+        timestamp = data.readUInt32LE 1
+        header.timestamp = new Date 1000 * timestamp
+        cnameLen = data.readUInt32LE 5
+        formatLen = data.readUInt32LE 9
+        msgLen = data.readUInt32LE 13
+        cname = data.slice 17, cnameLen
+        syslog.cname = cname.toString()
+        format = data.slice 17+cnameLen, formatLen
+        syslog.format = format.toString()
+        message = data.slice 17+cnameLen+formatLen, msgLen
+        syslog.message = JSON.parse message.toString()
+       
+        syslog
+
+    emailvirus: (syslog) ->
+        return new promise (fulfill, reject) =>
+             @emailanalyzer.parsemail syslog.message.email
               . then (parsedemail) =>
                   result =
-                      identification: data.cname
-                      timestamp: data.timestamp
+                      id: ""
                       virusNames: data.virus
+                      timestamp: data.timestamp
                       email: parsedemail
-                  @emit 'emailvirus.result', result
-                  return
+                  syslog.parsedemail = result
+                  return fulfill syslog
               . catch (error) =>
-                        @emit 'emailvirus.error', error
-                        return
+                  return reject error
 
 
-    transactionHandler: (message, topic) ->
-        @ta.parseMessage message
-         . then (header) =>
-             @emit 'transactions', topic, header
-             return
-         . catch (error) =>
-             @emit 'error', new Error "#{topic} failed for message #{message}"
-             return
-
-    webtransactions: (message) ->
-        return @transactionHandler message, 'web.transactions'
-
-    emailtransactions: (message) ->
-        return @transactionHandler message, 'email.transactions'
-    webvirusviolations: (message) ->
-        return @transactionHandler message, 'web.virus.violations'
-    emailvirusviolations: (message) ->
-        return @transactionHandler message, 'email.virus.violations'
-    webcontentfilteringtransactions: (message) ->
-        return @transactionHandler message, 'web.contentfiltering.transactions'
-    webcontentfilteringviolations: (message) ->
-        return @transactionHandler message, 'web.contentfiltering.violations'
-    totaltransactions: (message) ->
-        return @transactionHandler message, 'total.transactions'
-
-
-                            
 
 
 module.exports = EventAnalyzer
@@ -142,23 +89,3 @@ if require.main is module
     buf.write "virus1,virus2", 64
     buf.write body, 78
 
-    #console.log buf.toString()
-    ea.emailvirus buf
-    ea.on 'emailvirus.result', (result) ->
-        
-
-    ea.on 'emailvirus.error', (error) ->
-        
-
-
-
-
-            
-
-
-
-
-
-
-
-module.exports = EventAnalyzer

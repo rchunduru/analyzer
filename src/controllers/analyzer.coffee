@@ -76,160 +76,79 @@ class AnalyzerService extends SD
             @topics.map (topic) =>
                 # XXX Use eval to build the handlers
                 switch topic
-                    when 'web.contentfiltering.transactions'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @webcontentfilteringtransactions
-                    when 'web.contentfiltering.violations'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @webcontentfilteringviolations
-                    when 'mail.virus.result'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @mailvirusresult
-                    when 'mail.virus.violations'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @mailvirusviolations
-                    when 'mail.virus.transactions'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @mailvirustransactions
-                    when 'web.virus.violations'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @webvirusviolations
-                    when 'web.virus.transactions'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @webvirustransactions
-                    when 'transactions'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @transactions
+                    when 'LOGGER.SYSLOG', 'logger.syslog'
+                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @loggersyslog
 
+    loggersyslog: (message) ->
+        @log "Message from MQ ..check if its in string format or raw buffer.. Assuming buffer format"
+        @log message
+        msg  = @ea.stripHeader message.body
+        syslog = @ea.decodeBinarySyslog msg
+        switch syslog.format
+            when 'email.virus', 'EMAIL.VIRUS'
+                @ea.emailvirus syslog
+                 . then (body) =>
+                     body.id = @id
+                     @mailvirus body
+                     message.ack()
+                     return
 
-    mailvirusresult: (message) ->
-        parseMessage message
-            . then (emailData) =>
-                @log "Email Data recvd is", emailData
-                #Write onto elastic DB
-                @eclient.createDocumentAsync @id, 'email.virus', emailData
-                    . then (response) ->
-                        @log "Added email virus ", response
-                , (error) ->
-                    @log "Error while adding email virus into elastic DB", error
+            else
+                data = syslog.message
+                # First get the key as transactions or violations
+                strarray = data.format.split(".")
+                bodykey = strarray.pop()
+                # Get the key as "web.contentfiltering" etc.,
+                objkey = ""
+                for str in strarray
+                    objkey += str
 
-    webcontentfilteringtransactions: (message) ->
-        parseMessage message
-            . then (transaction) =>
+                objkey = objkey.toLowerCase()
+                bodykey = bodykey.toLowerCase()
                 @getTransaction()
-                    . then (content) =>
-                         content._source.transactions ?= {}
-                         content._source.transactions.webContentFiltering ?=  {}
-                         content._source.transactions.webContentFiltering.transactions += transaction.count
-                         @updateTransaction content._id, content._source
-              , (error) =>
-                  #write onto Elastic DB
-                  entry =
-                      timestamp: transaction.start
-                      transactions:
-                        webContentFiltering:
-                            transactions: transaction.count
-                @createTransaction content
+                . then (content) =>
+                    content._source.transactions ?= {}
+                    content._source.timestamp ?= data.start
+                    # Get the data.format into the key of content._source.transactions
 
-    webcontentfilteringviolations: (message) ->
-       parseMessage message
-        . then (transaction) =>
-            @getTransaction()
-             . then (content) =>
-                 content._source.transactions ?= {}
-                 content._source.transactions.webContentFiltering ?=  {}
-                 content._source.transactions.webContentFiltering.violations += transaction.count
-                 @updateTransaction content._id, content._source
-              , (error) =>
-                #write onto Elastic DB
-                entry =
-                    timestamp: transaction.start
-                    transactions:
-                        webContentFiltering:
-                            violations: transaction.count
-                @createTransaction content
+                    (content._source.transactions)[b = objkey] ?= {}
+                    # Now set the content of the created object
+                    contentvalue = (content._source.transactions)[b = objkey]
+                    (contentvalue)[b = bodykey] ?= 0
+                    (contentvalue)[b = bodykey] += data.count
 
-    emailvirusviolations: (message) ->
-       parseMessage message
-        . then (transaction) =>
-            @getTransaction()
-             . then (content) =>
-                 content._source.transactions ?= {}
-                 content._source.transactions.emailVirus?=  {}
-                 content._source.transactions.emailVirus.violations += transaction.count
-                 @updateTransaction content._id, content._source
-              , (error) =>
-                #write onto Elastic DB
-                entry =
-                    timestamp: transaction.start
-                    transactions:
-                        emailVirus:
-                            violations: transaction.count
-                @createTransaction content
+                     
+                    @updateTransaction content._id, content._source
+                    . then (result) =>
+                        return message.ack()
+                    , (error) =>
+                        @log "Debug: Error in updating the transaction", error, content._source
+                        return message.ack()
+                , (error) =>
+                    #write onto Elastic DB
+                    (transaction = {})[b = bodykey] ?= {}
+                    contentvalue = (transaction)[b = bodykey]
+                    (contentvalue)[b = bodykey] ?= 0
+                    (contentvalue)[b = bodykey] = data.count
+                    content =
+                        id: @id
+                        timestamp: data.start
+                        transactions:transaction
+                    @createTransaction content
+                     .then (result) =>
+                        return message.ack()
+                     , (error) =>
+                         @log " Failed to create a transaction record in Elastic search", error, content
+                         return
 
-    emailvirustransactions: (message) ->
-       parseMessage message
-        . then (transaction) =>
-            @getTransaction()
-             . then (content) =>
-                 content._source.transactions ?= {}
-                 content._source.transactions.emailVirus?=  {}
-                 content._source.transactions.emailVirus.transactions += transaction.count
-                 @updateTransaction content._id, content._source
-              , (error) =>
-                #write onto Elastic DB
-                entry =
-                    timestamp: transaction.start
-                    transactions:
-                        emailVirus:
-                            transactions: transaction.count
-                @createTransaction content
 
-    webvirusviolations: (message) ->
-       parseMessage message
-        . then (transaction) =>
-            @getTransaction()
-             . then (content) =>
-                 content._source.transactions ?= {}
-                 content._source.transactions.webVirus?=  {}
-                 content._source.transactions.webVirus.violations += transaction.count
-                 @updateTransaction content._id, content._source
-              , (error) =>
-                #write onto Elastic DB
-                entry =
-                    timestamp: transaction.start
-                    transactions:
-                        webVirus:
-                            violations: transaction.count
-                @createTransaction content
-
-    webvirustransactions: (message) ->
-       parseMessage message
-        . then (transaction) =>
-            @getTransaction()
-             . then (content) =>
-                 content._source.transactions ?= {}
-                 content._source.transactions.webVirus?=  {}
-                 content._source.transactions.webVirus.transactions += transaction.count
-                 @updateTransaction content._id, content._source
-              , (error) =>
-                #write onto Elastic DB
-                entry =
-                    timestamp: transaction.start
-                    transactions:
-                        webVirus:
-                            transactions: transaction.count
-                @createTransaction content
-
-    transactions: (message) ->
-       parseMessage message
-        . then (transaction) =>
-            @getTransaction()
-             . then (content) =>
-                 content._source.transactions ?= {}
-                 content._source.transactions.count ?= 0
-                 content._source.transactions.count += transaction.count
-                 @updateTransaction content._id, content
-              , (error) =>
-                #write onto Elastic DB
-                entry =
-                    timestamp: transaction.start
-                    transactions:
-                        count: transaction.count
-                @createTransaction content
-
+    mailvirus: (emailData) ->
+        #Write onto elastic DB
+        @eclient.createDocumentAsync @id, 'email.virus', emailData
+            . then (response) ->
+                @log "Added email virus ", response
+            , (error) ->
+                @log "Error while adding email virus into elastic DB", error
 
 
     createTransaction: (content) ->
@@ -280,12 +199,13 @@ class AnalyzerService extends SD
                             format: 'yyyy-mm-dd'
                             extended_bounds:min:from, max:to
                         aggs:
-                            webVirusTransactions:sum:field:"transactions.webVirus.transactions"
-                            webVirusViolations:sum:field:"transactions.webVirus.violations"
-                            webContentFilteringTransactions:sum:field:"transactions.webContentFiltering.transactions"
-                            webContentFilteringViolations:sum:field:"transactions.webContentFiltering.violations"
-                            mailVirusTransactions:sum:field:"transactions.mailVirus.transactions"
-                            mailVirusViolations:sum:field:"transactions.mailVirus.violations"
+                            # XXX Check the type of keys we will have in the DB
+                            webVirusTransactions:sum:field:"transactions.webvirus.transactions"
+                            webVirusViolations:sum:field:"transactions.webvirus.violations"
+                            webContentFilteringTransactions:sum:field:"transactions.webcontentfiltering.transactions"
+                            webContentFilteringViolations:sum:field:"transactions.webcontentfiltering.violations"
+                            mailVirusTransactions:sum:field:"transactions.mailvirus.transactions"
+                            mailVirusViolations:sum:field:"transactions.mailvirus.violations"
 
             @em.searchAsync @eclient, @id, 'transaction.summary', body
             . then (results) =>
