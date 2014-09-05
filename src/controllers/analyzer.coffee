@@ -14,6 +14,7 @@ EA = require './eventanalyzers'
 parseurl = require('../helpers/utils').parseUrl
 parseMessage = require('../helpers/utils').parseMessage
 postRequest = require('../helpers/utils').postRequest
+parsequery = require('../helpers/utils').parseQuery
 
 
 class AnalyzerService extends SD
@@ -47,8 +48,10 @@ class AnalyzerService extends SD
             @data.sources.map (source) =>
                 parsedurl = parseurl source
                 # Build the topics ready for subscription
-                if parsedurl.query? and parsedurl.query.topic?
-                    parsedurl.query.topic.map (topic) =>
+                if parsedurl.query?
+                    result = parsequery parsedurl.query
+                    return unless result.topic
+                    result.topic.map (topic) =>
                         @topics.push topic
 
                 connect = =>

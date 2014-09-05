@@ -22,3 +22,7 @@ module.exports.postRequest = postRequest = (body, url) ->
         console.log 'rcvd response for http request', res
     req.write body
     req.end()
+
+module.exports.parseQuery = parseQuery = (query) ->
+    querystring = require 'querystring'
+    return querystring.parse query
