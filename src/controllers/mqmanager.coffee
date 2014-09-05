@@ -20,9 +20,14 @@ class MqController extends EventEmitter
                     message: "Failed due to error #{error}"
                 @emit 'mq.error', err
 
-        connect = () =>
-            @client = stomp.overTCP @host, @port, connectcb, errorcb
+        connect = =>
+            console.log "Debug: Stomp Client connecting to host: #{host} port: #{port}"
+            headers = { login:username, passcode:password, 'client-id':'analyzer'}
+            @client.connect headers, connectcb, errorcb
 
+        @client = stomp.overTCP host, port
+        @client.heartbeat.outgoing = 20000
+        @client.heartbeat.incoming = 0
         connect()
 
     subscribe: (queue, handler) ->

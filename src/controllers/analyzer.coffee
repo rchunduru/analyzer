@@ -48,14 +48,23 @@ class AnalyzerService extends SD
             @data.sources.map (source) =>
                 parsedurl = parseurl source
                 # Build the topics ready for subscription
+                @log "Debug: parsedurl query is ", parsedurl.query
                 if parsedurl.query?
-                    result = parsequery parsedurl.query
-                    return unless result.topic
-                    result.topic.map (topic) =>
-                        @topics.push topic
+                    switch parsedurl.query.topic.prototype
+                        when 'array'
+                            @topics = parsedurl.query.topic
+                        else
+                            @topics = [parsedurl.query.topic]
+                    @log "Topics identified to subscribe", @topics
 
                 connect = =>
+                    @log "Debug: Connecting to MQ hostname", parsedurl.hostname, "port: ", parsedurl.port
                     @mq.connect parsedurl.hostname, parsedurl.port, parsedurl.username, parsedurl.password, 10000, 5
+                try 
+                    connect()
+                catch err
+                    @log "ALERT: Caught Error while connecting to MQ", err
+
                 @mq.on 'mq.connected', (client) =>
                     @log "Connected to the MQ broker", data.sources
                     @mqclient = client
