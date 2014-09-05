@@ -89,6 +89,11 @@ class AnalyzerService extends SD
         for topic in @topics
             (@subscriptions ?= {})[b = topic] = @mq.subscribe "/topic/#{topic}", @loggersyslog
 
+    mqUnsubscribe: ->
+        for key of @subscriptions
+            @mq.unsubscribe  @subscriptions[key]
+        @mq.disconnect()
+
     loggersyslog: (message) ->
         @log "Assuming string format rcvd from MQ", message
         buf = new Buffer message.body.length
@@ -225,6 +230,11 @@ class AnalyzerService extends SD
             , (error) =>
                  return reject error
 
+    cleanup: ->
+        @mqUnsubscribe()
+        @cleanElasticDocuments()
+
+
 class AnalyzerServices extends SR
     constructor: (filename) ->
         @on 'load', (key, val) ->
@@ -254,6 +264,12 @@ class AnalyzerServices extends SR
         return unless entry? and entry.data?
         entry.data.id = entry.id
         super key, entry
+
+
+    remove: (key) ->
+        entry = @getEntry key
+        entry.cleanup()
+        super key
 
 class AnalyzerManager extends SA
 
