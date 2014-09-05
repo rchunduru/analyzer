@@ -60,13 +60,12 @@ class AnalyzerService extends SD
                 connect = =>
                     @log "Debug: Connecting to MQ hostname", parsedurl.hostname, "port: ", parsedurl.port
                     @mq.connect parsedurl.hostname, parsedurl.port, parsedurl.username, parsedurl.password, 10000, 5
-                try 
-                    connect()
-                catch err
-                    @log "ALERT: Caught Error while connecting to MQ", err
+
+                setTimeout connect, 1000
 
                 @mq.on 'mq.connected', (client) =>
-                    @log "Connected to the MQ broker", data.sources
+                    @log "Connected to the MQ broker", @data.sources
+                    @log " ABout to subscribe to ", @topics
                     @mqclient = client
                     @subscribe()
 
@@ -86,11 +85,9 @@ class AnalyzerService extends SD
             @log "Connected to the Elasticsearch DB", @data.output
 
     subscribe: ->
-            @topics.map (topic) =>
-                # XXX Use eval to build the handlers
-                switch topic
-                    when 'LOGGER.SYSLOG', 'logger.syslog'
-                        @subscriptions[topic] = @subscribe "/topic/#{topic}", @loggersyslog
+        # XXX Add async loop here
+        for topic in @topics
+            (@subscriptions ?= {})[b = topic] = @mq.subscribe "/topic/#{topic}", @loggersyslog
 
     loggersyslog: (message) ->
         @log "Assuming string format rcvd from MQ", message

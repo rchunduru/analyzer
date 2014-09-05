@@ -22,7 +22,8 @@ class MqController extends EventEmitter
 
         connect = =>
             console.log "Debug: Stomp Client connecting to host: #{host} port: #{port}"
-            headers = { login:username, passcode:password, 'client-id':'analyzer'}
+            #headers = { login:username, passcode:password, 'client-id':'analyzer'}
+            headers = { login:username, passcode:password}
             @client.connect headers, connectcb, errorcb
 
         @client = stomp.overTCP host, port
