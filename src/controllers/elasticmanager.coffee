@@ -3,24 +3,35 @@ class ElasticController
 
     init: (@host, @loglevel) ->
         @loglevel ?= 'trace'
-        return new elasticClient.Client host: @host, log: @loglevel
+        return new elasticClient.Client host: @host, log: @loglevel, keepAlive:true
 
     deleteType: (dbclient, index, type, callback) ->
         dbClient.delete index, type, (error) =>
             return callback error
 
-    createDocument: (dbclient, index, type, body, callback) ->
+    #createDocument: (dbclient, index, type, body, callback) ->
+    createDocument: (dbclient, index, type, body) ->
         content =
             index: index
             type: type
             body: body
         console.log "content is ", content
+        ###
         dbclient.create content, (error, response) =>
             return callback error, response
+        ###
+        return dbclient.create content
+        
 
     deleteDocument: (dbclient, index, type, id, callback) ->
-        dbclient.delete index:index, type:type, id: id, (error, response) =>
+        dbclient.delete index:index, type:type, id: id, ignoreUnavailable:true, (error, response) =>
             return callback error, response
+
+    deleteAllDocuments: (dbclient, index, type, callback) ->
+        dbclient.delete index:index, type:type, id:'_all', ignoreUnavailable:true, (error, results) =>
+            return callback "success" unless error instanceof Error
+            return callback error
+
 
     getDocument: (dbclient, index, type, callback) ->
         content = {index:index}

@@ -4,14 +4,15 @@
   "description": "Collects events from stormnodes and anlyzes them as consumable data",
   "dependencies": {
     "async": "0.9.0",
+    "bluebird": "2.3.2",
     "bunyan": "0.23.1",
     "elasticsearch": "2.2.0",
     "json-schema": "0.2.2",
+    "mailparser": "^0.4.6",
     "minimist": "0.1.0",
     "node-uuid": "1.4.1",
     "stompjs": "2.3.3",
-    "stormagent": "0.2.0",
-    "bluebird": "2.3.2"
+    "stormagent": "0.2.0"
   },
   "main": "./lib/analyzer",
   "scripts": {
@@ -28,7 +29,7 @@
         "lib/plugin"
       ]
     },
-    "usgEmailNotify": "http://enterprise.dev.intercloud.net/notify"
+    "usgEmailNotify": "https://enterprise.dev.intercloud.net/notify"
   },
   "repository": {
     "type": "git",

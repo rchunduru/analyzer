@@ -28,7 +28,9 @@
               @next error
 
     @delete  '/analyzers/:id': ->
-        agent.aservices.remove @params.id
+        result = agent.aservices.remove @params.id
+        console.log "Debug: result for delete is ", result
+        return @next result if result instanceof Error
         @send 204
 
     @get '/analyzers/:id/stats': ->

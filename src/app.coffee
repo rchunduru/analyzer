@@ -12,14 +12,7 @@ if require.main is module
         """
         return
 
-    config = {}
-    config.port = argv.p ? 9000
-    config.logfile = argv.l ? "/tmp/log/analyzer.log"
-    config.edb =
-        #host:'control3.dev.intercloud.net:2358'
-        loglevel: 'trace'
-
-    config.datadir = argv.d ? "/tmp"
+    config = require('../package.json').config
 
     storm = null
 

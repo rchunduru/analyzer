@@ -15,13 +15,24 @@ module.exports.parseMessage = parseMessage =  (message) ->
         parser.parse message
 
 module.exports.postRequest = postRequest = (body, url) ->
-    parsedurl = parseUrl url
-    options = {host:parsedurl.hostname, port:parsedurl.port, path:parsedurl.pathname, method:POST, headers:{'content-Type':"application/json"}}
-    http = require 'http'
-    req = http.request options, (res) ->
-        console.log 'rcvd response for http request', res
-    req.write body
-    req.end()
+    return new promise (fulfill, reject) =>
+        parsedurl = parseUrl url
+        options = {host:parsedurl.host, port:parsedurl.port, path:parsedurl.pathname, method:'POST', headers:{'content-Type':"application/json"}}
+        console.log "Debug: util: options for http post req are ", options
+        http = require 'http'
+        req = http.request options, (res) =>
+            console.log 'rcvd response for http request', res
+            res.on 'data', (data) =>
+                console.log "Response for POST is ", data
+            res.on 'error', (error) =>
+                console.log "Error: USG notification failed due to #{error}"
+                return reject error
+            res.on 'end', =>
+                return fulfill "success"
+        req.on 'error', (error) =>
+            return reject error
+        req.write JSON.stringify body if body
+        req.end()
 
 module.exports.parseQuery = parseQuery = (query) ->
     querystring = require 'querystring'

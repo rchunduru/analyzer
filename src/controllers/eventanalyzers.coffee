@@ -1,6 +1,16 @@
 promise = require 'bluebird'
 EventEmitter = require('events').EventEmitter
 
+parseUInt = (str) ->
+    return 0 unless str?
+    i = 0
+    multiplier = 1
+    sum = 0
+    while i++ < str.length
+        value = (str[(str.length - i)] * multiplier)
+        multiplier *= 10
+    sum
+
 
 class EmailAnalyzer
 
@@ -10,7 +20,8 @@ class EmailAnalyzer
             mp = new MP
             mp.on 'end', (pemail) =>
                 parsedEmail =
-                    headers:
+                    headers:pemail.headers
+                    ###
                         to: pemail.headers.To
                         from:pemail.headers.from
                         subject:pemail.subject
@@ -19,12 +30,15 @@ class EmailAnalyzer
                         inReplyTo: pemail.inReplyTo
                         priority: pemail.priority
                         date:pemail.date
+                    ###
                     content: pemail.text ?= pemail.html
                     attachments: pemail.attachments
-                console.log parsedEmail.headers
+                console.log "Debug: parsed email headers are ", pemail.headers
+                return reject new Error "Failed to parse headers" if pemail.headers is {}
                 return fulfill parsedEmail
-                
-            mp.write unparsedEmail
+            
+            buf = new Buffer unparsedEmail, 'base64'    
+            mp.write buf.toString()
             mp.end()
             timeout =  =>
                 return reject new Error "Timed out"
@@ -36,15 +50,30 @@ class EventAnalyzer extends EventEmitter
         @emailanalyzer = new EmailAnalyzer
 
     stripHeader: (message) ->
-        size = message.readUInt32LE 0
-        data = message.slice 4, size
-        data
+        content = {}
+        msgs = message.split " {"
+        headers = msgs[0].split(' ')
 
-    decodeBinarySyslog: (data) ->
+        console.log "Debug: headers rcvd are ", headers
+        header = 
+            priority: parseUInt headers[0]
+            timestamp: parseUInt headers[1]
+            format: headers.pop()
+            cname: (buf for buf in headers[2...headers.length]).join(' ')
+
+        data = message.substring msgs[0].length, message.length
+        content.header = header
+        content.data = JSON.parse data
+        #console.log "Debug: stripHeader is generating content", content.data
+        content
+
+    decodeBinarySyslog: (content) ->
+        data = content.data
         syslog = {}
+        return syslog if content.size < 20
         syslog.pri = data.readUInt8 0
         timestamp = data.readUInt32LE 1
-        header.timestamp = new Date 1000 * timestamp
+        syslog.timestamp = new Date 1000 * timestamp
         cnameLen = data.readUInt32LE 5
         formatLen = data.readUInt32LE 9
         msgLen = data.readUInt32LE 13
@@ -54,20 +83,20 @@ class EventAnalyzer extends EventEmitter
         syslog.format = format.toString()
         message = data.slice 17+cnameLen+formatLen, msgLen
         syslog.message = JSON.parse message.toString()
-       
+      
+        console.log "Debug: analyzed syslog message is ", syslog 
         syslog
 
-    emailvirus: (syslog) ->
+    emailvirus: (content) ->
         return new promise (fulfill, reject) =>
-             @emailanalyzer.parsemail syslog.message.email
+             @emailanalyzer.parsemail content.data.mail
               . then (parsedemail) =>
                   result =
                       id: ""
-                      virusNames: data.virus
-                      timestamp: data.timestamp
-                      email: parsedemail
-                  syslog.parsedemail = result
-                  return fulfill syslog
+                      virusNames: content.data.virus
+                      timestamp: (parseUInt content.data.timestamp) * 1000
+                      mail: parsedemail
+                  return fulfill result
               . catch (error) =>
                   return reject error
 
