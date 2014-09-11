@@ -29,7 +29,7 @@
         "lib/plugin"
       ]
     },
-    "usgEmailNotify": "https://enterprise.dev.intercloud.net/notify"
+    "usgEmailNotify": "http://stormweb:8000/notify"
   },
   "repository": {
     "type": "git",

@@ -17,11 +17,12 @@ module.exports.parseMessage = parseMessage =  (message) ->
 module.exports.postRequest = postRequest = (body, url) ->
     return new promise (fulfill, reject) =>
         parsedurl = parseUrl url
-        options = {host:parsedurl.host, port:parsedurl.port, path:parsedurl.pathname, method:'POST', headers:{'content-Type':"application/json"}}
+        options = {host:parsedurl.hostname, port:parsedurl.port, path:parsedurl.pathname, method:'POST', headers:{'content-Type':"application/json"}}
         console.log "Debug: util: options for http post req are ", options
         http = require 'http'
         req = http.request options, (res) =>
-            console.log 'rcvd response for http request', res
+            #console.log 'rcvd response for http request', res
+            return reject new Error "Failed with status code #{res.statusCode}" if res.statusCode != 200
             res.on 'data', (data) =>
                 console.log "Response for POST is ", data
             res.on 'error', (error) =>

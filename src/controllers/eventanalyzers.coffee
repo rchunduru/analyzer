@@ -62,6 +62,7 @@ class EventAnalyzer extends EventEmitter
             cname: (buf for buf in headers[2...headers.length]).join(' ')
 
         data = message.substring msgs[0].length, message.length
+        console.log "Debug: data in the payload is ", data 
         content.header = header
         content.data = JSON.parse data
         #console.log "Debug: stripHeader is generating content", content.data

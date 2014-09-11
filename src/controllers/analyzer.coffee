@@ -33,7 +33,8 @@ class AnalyzerService extends SD
 
     constructor: (id, data) ->
         super id, data, schema
-        @em  = promise.promisifyAll(EM.prototype)
+        #@em  = promise.promisifyAll(EM.prototype)
+        @em  = new EM
         @mq = new MM
         @ea = new EA
         @susbscriptions = {}
@@ -91,8 +92,12 @@ class AnalyzerService extends SD
 
             #@log "Rcvd message from MQ", message
             return if message.length < 20
-
-            msg  = @ea.stripHeader message.body
+            # XXX - Make this a promise. For now try catch the error
+            try
+                msg  = @ea.stripHeader message.body
+            catch err
+                @log "Error in stripping header", err
+                return
             @log "Debug: After stripping the header, the msg header is ", msg.header
             return if msg is {}
            
@@ -140,10 +145,10 @@ class AnalyzerService extends SD
                      
                             @updateTransaction content._id, content._source
                             . then (result) =>
-                                return # message.ack()
+                                return 
                             , (error) =>
                                 @log "Debug: Error in updating the transaction", error, content._source
-                                return # message.ack()
+                                return 
                         , (error) =>
                             #write onto Elastic DB
                             (transaction = {})[b = bodykey] ?= {}
@@ -156,7 +161,7 @@ class AnalyzerService extends SD
                                 transactions:transaction
                             @createTransaction content
                              .then (result) =>
-                                return # message.ack()
+                                return
                              , (error) =>
                                  @log " Failed to create a transaction record in Elastic search", error, content
                                  return
@@ -174,22 +179,25 @@ class AnalyzerService extends SD
 
     mailvirus: (emailData) ->
         #Write onto elastic DB
-        @em.createDocument @eclient, @id, 'email.virus', emailData
+        @em.createDocument @eclient, 'email.virus', @id,  emailData
             . then (response) =>
                 @log "Added email virus ", response
-                @emit 'email.virus', @id, emailData
+                @emit 'email.virus', @id, response._id, emailData
             , (error) =>
                 @log "Error while adding email virus into elastic DB", error
+
+    deleteDocument: (index, type, id) ->
+        return @em.deleteDocument @eclient, index, type, id
 
     cleanElasticDocuments: ->
         return new promise (fulfill, reject) =>
             # XXX Need to maintain state if this instance has ever wrote content into Elastic DB
             # If so, need to throw error if elastic servers are not reachable
             return fulfill unless @eclient
-            @em.deleteAllDocumentsAsync @eclient, @id, 'email.virus'
+            @em.deleteAllDocumentsAsync @eclient, 'email.virus', @id
             . then (response) =>
                  @log "Deleted all documents of type email.virus"
-                 @em.deleteAllDocumentsAsync @eclient, @id, 'transaction.summary'
+                 @em.deleteAllDocumentsAsync @eclient, 'transaction.summary', @id
                  . then (response) =>
                      @log "Deleted all documents of type transaction.summary"
                      return fulfill "success"
@@ -202,23 +210,26 @@ class AnalyzerService extends SD
         
 
     createTransaction: (content) ->
-        @em.createDocument @eclient, @id, 'transaction.summary', content
-         . then (result) ->
-             @log 'added transaction summary record with content', content
-         , (error) ->
-             @log 'error in adding transaction record', error
+        return new promise (fulfill, reject) ->    
+            @em.createDocument @eclient, 'transaction.summary', @id,  content
+             . then (result) =>
+                 @log 'added transaction summary record with content', content
+                 return fulfill result._id
+             , (error) =>
+                 @log 'error in adding transaction record', error
+                 return reject error
 
     updateTransaction: (id, content) ->
-        @em.updateDocument @eclient, @id, 'transaction.summary', content
-         . then (result) ->
+        @em.updateDocument @eclient, 'transaction.summary', @id, content
+         . then (result) =>
              @log 'updated transaction summary with content', content
-         , (error) ->
+         , (error) =>
              @log "error in updating the transaction with id #{id}", error
 
     getTransaction:  ->
         body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:"now/d"}
         return new promise (fulfill, reject) =>
-            @em.search @eclient, @id, 'transaction.summary', body
+            @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
                 if results.length > 1
                     @log "Warning More search results.", results
@@ -257,7 +268,7 @@ class AnalyzerService extends SD
                             mailVirusTransactions:sum:field:"transactions.mailvirus.transactions"
                             mailVirusViolations:sum:field:"transactions.mailvirus.violations"
 
-            @em.searchAsync @eclient, @id, 'transaction.summary', body
+            @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
                  # XXX Format the results
                  return fulfill results
@@ -277,8 +288,8 @@ class AnalyzerServices extends SR
             if entry?
                 entry.saved = true
                 @add key, entry
-                entry.on 'email.virus', (id, emailData) =>
-                    @emit 'email.virus', id, emailData
+                entry.on 'email.virus', (type, recordId, emailData) =>
+                    @emit 'email.virus', type, recordId, emailData
 
 
         @on 'removed', (key) ->
@@ -321,11 +332,13 @@ class AnalyzerManager extends SA
         super config
         @log "data dir is ", @config
         @aservices = new AnalyzerServices "#{@config.datadir}/analyzerservices.db"
-        @aservices.on 'email.virus', (id, emailData) =>
-            @log "Debug: Notifying USG #{@config.usgEmailNotify} with email Data for instance#{id}"
+        @aservices.on 'email.virus', (type, recordId, emailData) =>
+            @log "Debug: Notifying USG #{@config.usgEmailNotify} with email Data for instance#{type} and recordId #{recordId}"
             @notifyUSG emailData
              . then (response) =>
                  @log "Successfully updated the USG", response
+                 entry = @aservices.getEntry type
+                 entry.deleteDocument 'email.virus', type, recordId 
              , (error) =>
                  @log "Failed to notify USG", error    
 
