@@ -37,11 +37,13 @@ class ElasticController
 
     search: (dbclient, index, type,  content) ->
         return new promise (fulfill, reject) =>
-            dbclient.search index:index, body:content
+            dbclient.search index:index, type:type, body:content
             . then (response) =>
-                if response.hits? and response.hits.total > 1
+                if response.hits? and response.hits.total >= 1
                     #results = (hit._source for hit in response.hits,hits)
                     return fulfill response.hits
+                else
+                    return fulfill []
             , (error) =>
                 return reject error
     

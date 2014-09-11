@@ -4,6 +4,7 @@ EM = require './elasticmanager'
 MM = require './mqmanager'
 validate = require('json-schema').validate
 uuid = require 'node-uuid'
+async = require 'async'
 
 async = require 'async'
 SR = require('stormagent').StormRegistry
@@ -41,6 +42,7 @@ class AnalyzerService extends SD
         @topics = []
         @mqConnect()
         @dbConnect()
+        @forEver()
         
 
     mqConnect:  ->
@@ -48,7 +50,7 @@ class AnalyzerService extends SD
             @data.sources.map (source) =>
                 parsedurl = parseurl source
                 # Build the topics ready for subscription
-                @log "Debug: parsedurl query is ", parsedurl.query
+                #@log "Debug: parsedurl query is ", parsedurl.query
                 if parsedurl.query?
                     switch parsedurl.query.topic.prototype
                         when 'array'
@@ -279,6 +281,35 @@ class AnalyzerService extends SD
         @mqUnsubscribe()
         return @cleanElasticDocuments()
         
+    forEver: ->
+             
+        processEmail = (entry) =>
+            return new promise (fulfill, reject) =>
+                @emit 'email.virus', @id, entry._id, entry._source
+                return fulfill entry._id
+
+        async.whilst(
+            () ->
+                1
+            (searchloop) =>
+                body = query:filtered:{ query:{match_all:{}}}
+                @em.search @eclient, 'email.virus', @id, body
+                 . then (results) =>
+                     if results? and results.length is 0
+                         return
+                     promise.all results.hits.map (result) =>
+                             return processEmail result
+                              . then (resp) =>
+                                 return resp
+                     . then (totalResults) =>
+                          @log "total results are ", totalResults
+                  , (error) =>
+                      @log "Oops, failed to search", error
+
+                setTimeout searchloop, 200000
+            (err) =>
+                @log "Alert: Should not be here", err
+        )
 
 
 class AnalyzerServices extends SR
@@ -338,7 +369,11 @@ class AnalyzerManager extends SA
              . then (response) =>
                  @log "Successfully updated the USG", response
                  entry = @aservices.getEntry type
-                 entry.deleteDocument 'email.virus', type, recordId 
+                 entry.deleteDocument 'email.virus', type, recordId
+                 . then (resp) =>
+                     @log "successfully deleted the document of type #{type} and recordId #{recordId}"
+                 , (error) =>
+                     @log "Failed to delete document", error
              , (error) =>
                  @log "Failed to notify USG", error    
 

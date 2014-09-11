@@ -22,7 +22,8 @@ module.exports.postRequest = postRequest = (body, url) ->
         http = require 'http'
         req = http.request options, (res) =>
             #console.log 'rcvd response for http request', res
-            return reject new Error "Failed with status code #{res.statusCode}" if res.statusCode != 200
+            if res.statusCode != 200
+                return reject new Error "Failed with status code #{res.statusCode}"
             res.on 'data', (data) =>
                 console.log "Response for POST is ", data
             res.on 'error', (error) =>
