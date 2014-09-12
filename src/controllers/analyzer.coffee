@@ -164,7 +164,7 @@ class AnalyzerService extends SD
                             (contentvalue)[b = bodykey] = data.count
                             content =
                                 id: @id
-                                timestamp: data.timestamp.toDateString()
+                                timestamp: data.timestamp
                                 transactions:transaction
                             @log "Debug: generated content is ", content
                             @createTransaction content
@@ -237,16 +237,17 @@ class AnalyzerService extends SD
     getTransaction:  ->
         #body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:"now/d"}
         today = new Date()
-        today.setHours(0,0,0,0)
-        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:today}
+        stoday = today.getFullYear() + "-" + today.getMonth() + "-" + today.getDate()
+        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:stoday}
         return new promise (fulfill, reject) =>
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
-                @log "Got some results", results
-                return reject new Error "no results found" if results.length is 0
-                if results.hits.length >= 1
-                    @log "Warning More search results.", results
-                    return fulfill results.hits[0]
+                return reject new Error "no results found" if results is {}
+                @log "Got some results", results.hits
+                return reject new Error "no results found" if results.hits.hits.length is 0
+                if results.hits.hits.length >= 1
+                    @log "Warning More search results.", results.hits.hits
+                    return fulfill results.hits.hits[0]
                 else
                     return reject new Error "no results found"
             , (error) =>
@@ -264,12 +265,14 @@ class AnalyzerService extends SD
             when 'year'
                 interval = '1y'
         from  ?= '2014-01-01'
-        to    ?= new Date()
+        unless to?
+            todate = new Date()
+            to = todate.getFullYear() + "-" + todate.getMonth() + "-" + todate.getDay()
 
         return new promise (fulfill, reject) =>
             body =
                 aggregations:
-                    stats:
+                    analyzerstats:
                         date_histogram:
                             field:"timestamp"
                             interval: interval
@@ -283,19 +286,15 @@ class AnalyzerService extends SD
                             webContentFilteringViolations:sum:field:"transactions.webcontentfiltering.violations"
                             mailVirusTransactions:sum:field:"transactions.mailvirus.transactions"
                             mailVirusViolations:sum:field:"transactions.mailvirus.violations"
-            body =
-                aggregations:
-                    transactionStats:
-                        date_histogram:
-                            field:"timestamp"
-                            interval: interval
 
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
                  # XXX Format the results
                  @log "results for getstats are ", results
-                 return fulfill results
+                 return fulfill [] if Object.keys(results).length is 0
+                 return fulfill results.aggregations.analyzerstats.buckets
             , (error) =>
+                 @log "Debug: getStats() error is ", error
                  return reject error
 
     cleanup: ->
@@ -316,9 +315,10 @@ class AnalyzerService extends SD
                 body = query:filtered:{ query:{match_all:{}}}
                 @em.search @eclient, 'email.virus', @id, body
                  . then (results) =>
-                     if results? and results.length is 0
+                     return if Object.keys(results).length is 0
+                     if results? and results.hits? and results.hits.hits? and results.hits.hits.length is 0
                          return
-                     promise.all results.hits.map (result) =>
+                     promise.all results.hits.hits.map (result) =>
                              return processEmail result
                               . then (resp) =>
                                  return resp

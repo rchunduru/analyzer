@@ -12,16 +12,6 @@ class EmailAnalyzer
             mp.on 'end', (pemail) =>
                 parsedEmail =
                     headers:pemail.headers
-                    ###
-                        to: pemail.headers.To
-                        from:pemail.headers.from
-                        subject:pemail.subject
-                        cc:pemail.cc
-                        bcc:pemail.bcc
-                        inReplyTo: pemail.inReplyTo
-                        priority: pemail.priority
-                        date:pemail.date
-                    ###
                     content: pemail.text ?= pemail.html
                     attachments: pemail.attachments
                 console.log "Debug: parsed email headers are ", pemail.headers
@@ -58,8 +48,10 @@ class EventAnalyzer extends EventEmitter
         content.data = JSON.parse data
         console.log "Debug: start in data is ", content.data.start
         content.data.start ?= content.data.timestamp
-        gottime = parseUInt content.data.start
-        content.data.timestamp = new Date(gottime * 1000)
+        value  = parseUInt content.data.start
+        gottime = new Date(value* 1000)
+        formatdate = gottime.getFullYear() + "-" + gottime.getMonth() + "-" + gottime.getDate()
+        content.data.timestamp = formatdate
         console.log "Debug: rcvd timestamp is ", content.data.timestamp, gottime
         #console.log "Debug: stripHeader is generating content", content.data
         content
@@ -70,7 +62,7 @@ class EventAnalyzer extends EventEmitter
         return syslog if content.size < 20
         syslog.pri = data.readUInt8 0
         timestamp = data.readUInt32LE 1
-        syslog.timestamp = new Date 1000 * timestamp
+        syslog.timestamp = new Date (1000 * timestamp).toLocaleDateString()
         cnameLen = data.readUInt32LE 5
         formatLen = data.readUInt32LE 9
         msgLen = data.readUInt32LE 13

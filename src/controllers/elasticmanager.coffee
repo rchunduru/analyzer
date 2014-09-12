@@ -43,9 +43,9 @@ class ElasticController
             . then (response) =>
                 if response.hits? and response.hits.total >= 1
                     #results = (hit._source for hit in response.hits,hits)
-                    return fulfill response.hits
+                    return fulfill response
                 else
-                    return fulfill []
+                    return fulfill {}
             , (error) =>
                 return reject error
     
