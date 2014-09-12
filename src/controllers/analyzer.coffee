@@ -17,7 +17,7 @@ parseMessage = require('../helpers/utils').parseMessage
 postRequest = require('../helpers/utils').postRequest
 parsequery = require('../helpers/utils').parseQuery
 parseUInt = require('../helpers/utils').parseUInt
-
+getNextDay = require('../helpers/utils').getNextDay
 
 
 class AnalyzerService extends SD
@@ -236,10 +236,9 @@ class AnalyzerService extends SD
              @log "error in updating the transaction with id #{id}", error
 
     getTransaction: (timestamp)  ->
-        #body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:timestamp}
-        today = new Date()
-        stoday = today.getFullYear() + "-" + today.getMonth() + "-" + today.getDate()
-        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:timestamp}
+        nextday = getNextDay timestamp
+        return reject nextday if nextday instanceof Error
+        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:{gte:timestamp, lt:nextday}}
         return new promise (fulfill, reject) =>
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
@@ -281,12 +280,17 @@ class AnalyzerService extends SD
                             extended_bounds:min:from, max:to
                         aggs:
                             # XXX Check the type of keys we will have in the DB
-                            webVirusTransactions:sum:field:"transactions.webvirus.transactions"
-                            webVirusViolations:sum:field:"transactions.webvirus.violations"
-                            webContentFilteringTransactions:sum:field:"transactions.webcontentfiltering.transactions"
-                            webContentFilteringViolations:sum:field:"transactions.webcontentfiltering.violations"
-                            mailVirusTransactions:sum:field:"transactions.mailvirus.transactions"
-                            mailVirusViolations:sum:field:"transactions.mailvirus.violations"
+                            webTransactions:sum:field:"transactions.web.transactions"
+                            webAVUploadTransactions:sum:field:"transactions.webkasperskyupload.transactions"
+                            webAVDownloadTransactions:sum:field:"transactions.webkasperskydownload.transactions"
+                            webAVUploadViolations:sum:field:"transactions.webkasperskyupload.violations"
+                            webAVDownloadViolations:sum:field:"transactions.webkasperskydownload.violations"
+                            webContentFilteringAllowedTransactions:sum:field:"transactions.webcontentfilter.allowedtransactions"
+                            webContentFilteringViolations:sum:field:"transactions.webcontentfilter.violations"
+                            imapTransactions:sum:field:"transactions.mailimap.transactions"
+                            pop3Transactions:sum:field:"transactions.mailpop3.transactions"
+                            imapViolations:sum:field:"transactions.mailimap.violations"
+                            pop3Violations:sum:field:"transactions.mailpop3.violations"
 
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
@@ -294,8 +298,25 @@ class AnalyzerService extends SD
                  @log "results for getstats are ", results
                  return fulfill [] if Object.keys(results).length is 0
                  response =
-                     stats: results.aggregations.analyzerstats.buckets
+                     stats:[] 
                      id: @id
+                 results.aggregations.analyzerstats.buckets.map (entry) =>
+                     statdata = 
+                         mailVirusViolations: {}
+                         mailTransactions: {}
+                         webVirusViolations: {}
+                         webVirusTransactions: {}
+                         webContentFilteringTransactions: {}
+                         webContentFilteringViolations: {}
+                         
+                     statdata.mailVirusViolations.value = entry.imapViolations.value + entry.pop3Violations.value
+                     statdata.mailTransactions.value = entry.imapTransactions.value + entry.pop3Transactions.value
+                     statdata.webVirusViolations.value = entry.webAVUploadViolations.value + entry.webAVDownloadViolations.value
+                     statdata.webVirusTransactions.value = entry.webAVUploadTransactions.value + entry.webAVDownloadTransactions.value
+                     statdata.webContentFilteringTransactions.value = entry.webContentFilteringAllowedTransactions.value
+                     statdata.webContentFilteringViolations.value = entry.webContentFilteringViolations.value
+                     response.stats.push statdata
+
                  return fulfill response
             , (error) =>
                  @log "Debug: getStats() error is ", error

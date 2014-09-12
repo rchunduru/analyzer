@@ -50,3 +50,19 @@ module.exports.postRequest = postRequest = (body, url) ->
 module.exports.parseQuery = parseQuery = (query) ->
     querystring = require 'querystring'
     return querystring.parse query
+
+
+module.exports.getNextDay = getNextDay = (givenday) ->
+    dlist = givenday.split "-"
+    return new Error "UnSupported date format #{givenday}" unless dlist.length is 3
+    year = parseUInt dlist[0]
+    month = parseUInt dlist[1]
+    day = parseUInt dlist[2]
+  
+    nextday = new Date()
+    nextday.setFullYear year
+    nextday.setMonth month
+    nextday.setDate day+1
+
+    followingday = nextday.getFullYear() + "-" + nextday.getMonth() + "-" + nextday.getDate()
+    followingday 
