@@ -292,7 +292,10 @@ class AnalyzerService extends SD
                  # XXX Format the results
                  @log "results for getstats are ", results
                  return fulfill [] if Object.keys(results).length is 0
-                 return fulfill results.aggregations.analyzerstats.buckets
+                 response =
+                     stats: results.aggregations.analyzerstats.buckets
+                     id: @id
+                 return fulfill response
             , (error) =>
                  @log "Debug: getStats() error is ", error
                  return reject error
