@@ -3,7 +3,7 @@ promise = require 'bluebird'
 class ElasticController
 
     init: (@host, @loglevel) ->
-        @loglevel ?= 'trace'
+        @loglevel ?= 'error'
         return new elasticClient.Client host: @host, log: @loglevel, keepAlive:true
 
     deleteType: (dbclient, index, type) ->
