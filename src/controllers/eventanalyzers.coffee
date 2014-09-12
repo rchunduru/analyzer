@@ -1,15 +1,6 @@
 promise = require 'bluebird'
 EventEmitter = require('events').EventEmitter
-
-parseUInt = (str) ->
-    return 0 unless str?
-    i = 0
-    multiplier = 1
-    sum = 0
-    while i++ < str.length
-        value = (str[(str.length - i)] * multiplier)
-        multiplier *= 10
-    sum
+parseUInt = require('../helpers/utils').parseUInt
 
 
 class EmailAnalyzer
@@ -65,6 +56,11 @@ class EventAnalyzer extends EventEmitter
         console.log "Debug: data in the payload is ", data 
         content.header = header
         content.data = JSON.parse data
+        console.log "Debug: start in data is ", content.data.start
+        content.data.start ?= content.data.timestamp
+        gottime = parseUInt content.data.start
+        content.data.timestamp = new Date(gottime * 1000)
+        console.log "Debug: rcvd timestamp is ", content.data.timestamp, gottime
         #console.log "Debug: stripHeader is generating content", content.data
         content
 
@@ -95,7 +91,7 @@ class EventAnalyzer extends EventEmitter
                   result =
                       id: ""
                       virusNames: content.data.virus
-                      timestamp: (parseUInt content.data.timestamp) * 1000
+                      timestamp: content.data.timestamp
                       mail: parsedemail
                   return fulfill result
               . catch (error) =>

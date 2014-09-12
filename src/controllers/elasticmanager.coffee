@@ -16,7 +16,9 @@ class ElasticController
             body: body
         console.log "content is ", content
         return dbclient.create content
-        
+
+    updateDocument: (dbclient, index, type, id, body) ->
+        return dbclient.update index:index, type:type, id:id, body:doc:body        
 
     deleteDocument: (dbclient, index, type, id) ->
         return dbclient.delete index:index, type:type, id:id, ignoreUnavailable:true

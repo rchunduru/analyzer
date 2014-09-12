@@ -1,6 +1,17 @@
 url = require 'url'
 promise = require 'bluebird'
 
+
+module.exports.parseUInt = parseUInt = (str) ->
+    #return 0 unless str?
+    i = 0
+    multiplier = 1
+    sum = 0
+    while i++ < str.length
+        sum += (str[(str.length - i)] * multiplier)
+        multiplier *= 10
+    sum
+
 module.exports.parseUrl = parseUrl = (givenUrl) ->
     parsedurl = url.parse givenUrl, true
     return parsedurl

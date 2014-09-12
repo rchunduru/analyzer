@@ -1,4 +1,4 @@
-promise = require 'bluebird'
+body:promise = require 'bluebird'
 bunyan = require 'bunyan'
 EM = require './elasticmanager'
 MM = require './mqmanager'
@@ -16,6 +16,8 @@ parseurl = require('../helpers/utils').parseUrl
 parseMessage = require('../helpers/utils').parseMessage
 postRequest = require('../helpers/utils').postRequest
 parsequery = require('../helpers/utils').parseQuery
+parseUInt = require('../helpers/utils').parseUInt
+
 
 
 class AnalyzerService extends SD
@@ -120,9 +122,9 @@ class AnalyzerService extends SD
                     else
                         data = msg.data
                         # Few validations on the data
-                        return unless data.count? and data.start?
+                        return unless data.count? and data.timestamp?
                         # First get the key as transactions or violations
-                        strarray = msg.header.format.split(".")
+                        strarray = data.format.split(".")
                         return if strarray.length == 1
                         bodykey = strarray.pop()
                         # Get the key as "web.contentfiltering" etc.,
@@ -132,10 +134,11 @@ class AnalyzerService extends SD
 
                         objkey = objkey.toLowerCase()
                         bodykey = bodykey.toLowerCase()
+                        @log "Debug: generated objkey #{objkey} and bodykey as #{bodykey}"
+                        data.count = parseUInt data.count
                         @getTransaction()
                         . then (content) =>
                             content._source.transactions ?= {}
-                            content._source.timestamp ?= data.start
                             # Get the data.format into the key of content._source.transactions
 
                             (content._source.transactions)[b = objkey] ?= {}
@@ -143,6 +146,7 @@ class AnalyzerService extends SD
                             contentvalue = (content._source.transactions)[b = objkey]
                             (contentvalue)[b = bodykey] ?= 0
                             (contentvalue)[b = bodykey] += data.count
+                            @log "Debug: existing: generated transaction is ", content._source.transactions
 
                      
                             @updateTransaction content._id, content._source
@@ -153,14 +157,16 @@ class AnalyzerService extends SD
                                 return 
                         , (error) =>
                             #write onto Elastic DB
-                            (transaction = {})[b = bodykey] ?= {}
-                            contentvalue = (transaction)[b = bodykey]
+                            @log "Creating a new data record"
+                            (transaction = {})[b = objkey] ?= {}
+                            contentvalue = (transaction)[b = objkey]
                             (contentvalue)[b = bodykey] ?= 0
                             (contentvalue)[b = bodykey] = data.count
                             content =
                                 id: @id
-                                timestamp: data.start
+                                timestamp: data.timestamp.toDateString()
                                 transactions:transaction
+                            @log "Debug: generated content is ", content
                             @createTransaction content
                              .then (result) =>
                                 return
@@ -212,7 +218,7 @@ class AnalyzerService extends SD
         
 
     createTransaction: (content) ->
-        return new promise (fulfill, reject) ->    
+        return new promise (fulfill, reject) =>    
             @em.createDocument @eclient, 'transaction.summary', @id,  content
              . then (result) =>
                  @log 'added transaction summary record with content', content
@@ -222,21 +228,29 @@ class AnalyzerService extends SD
                  return reject error
 
     updateTransaction: (id, content) ->
-        @em.updateDocument @eclient, 'transaction.summary', @id, content
+        @em.updateDocument @eclient, 'transaction.summary', @id, id, content
          . then (result) =>
              @log 'updated transaction summary with content', content
          , (error) =>
              @log "error in updating the transaction with id #{id}", error
 
     getTransaction:  ->
-        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:"now/d"}
+        #body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:"now/d"}
+        today = new Date()
+        today.setHours(0,0,0,0)
+        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:today}
         return new promise (fulfill, reject) =>
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
-                if results.length > 1
+                @log "Got some results", results
+                return reject new Error "no results found" if results.length is 0
+                if results.hits.length >= 1
                     @log "Warning More search results.", results
-                    return fulfill results[0]
+                    return fulfill results.hits[0]
+                else
+                    return reject new Error "no results found"
             , (error) =>
+                @log "get transaction failed with error", error
                 return reject error
 
 
@@ -256,7 +270,7 @@ class AnalyzerService extends SD
             body =
                 aggregations:
                     stats:
-                        date_historgram:
+                        date_histogram:
                             field:"timestamp"
                             interval: interval
                             format: 'yyyy-mm-dd'
@@ -269,10 +283,17 @@ class AnalyzerService extends SD
                             webContentFilteringViolations:sum:field:"transactions.webcontentfiltering.violations"
                             mailVirusTransactions:sum:field:"transactions.mailvirus.transactions"
                             mailVirusViolations:sum:field:"transactions.mailvirus.violations"
+            body =
+                aggregations:
+                    transactionStats:
+                        date_histogram:
+                            field:"timestamp"
+                            interval: interval
 
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
                  # XXX Format the results
+                 @log "results for getstats are ", results
                  return fulfill results
             , (error) =>
                  return reject error
@@ -306,7 +327,7 @@ class AnalyzerService extends SD
                   , (error) =>
                       @log "Oops, failed to search", error
 
-                setTimeout searchloop, 200000
+                setTimeout searchloop, 20000000 # set a configurable value
             (err) =>
                 @log "Alert: Should not be here", err
         )
@@ -400,6 +421,7 @@ class AnalyzerManager extends SA
 
      getStats: (id, params) ->
          entry = @aservices.getEntry id
+         @log "Debug: entry is #{entry} and params are #{params}"
          return entry.getStats params.from, params.to, params.interval
 
      notifyUSG: (emailData) ->
