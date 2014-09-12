@@ -136,7 +136,8 @@ class AnalyzerService extends SD
                         bodykey = bodykey.toLowerCase()
                         @log "Debug: generated objkey #{objkey} and bodykey as #{bodykey}"
                         data.count = parseUInt data.count
-                        @getTransaction()
+                        return unless data.timestamp?
+                        @getTransaction data.timestamp
                         . then (content) =>
                             content._source.transactions ?= {}
                             # Get the data.format into the key of content._source.transactions
@@ -234,15 +235,15 @@ class AnalyzerService extends SD
          , (error) =>
              @log "error in updating the transaction with id #{id}", error
 
-    getTransaction:  ->
-        #body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:"now/d"}
+    getTransaction: (timestamp)  ->
+        #body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:timestamp}
         today = new Date()
         stoday = today.getFullYear() + "-" + today.getMonth() + "-" + today.getDate()
-        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:stoday}
+        body = query:filtered:{ query:{match_all:{}} , filter:range:timestamp:gte:timestamp}
         return new promise (fulfill, reject) =>
             @em.search @eclient, 'transaction.summary', @id, body
             . then (results) =>
-                return reject new Error "no results found" if results is {}
+                return reject new Error "no results found" if Object.keys(results).length is 0
                 @log "Got some results", results.hits
                 return reject new Error "no results found" if results.hits.hits.length is 0
                 if results.hits.hits.length >= 1
@@ -276,7 +277,7 @@ class AnalyzerService extends SD
                         date_histogram:
                             field:"timestamp"
                             interval: interval
-                            format: 'yyyy-mm-dd'
+                            format: 'yyyy-MM-dd'
                             extended_bounds:min:from, max:to
                         aggs:
                             # XXX Check the type of keys we will have in the DB
